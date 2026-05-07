@@ -1,0 +1,1160 @@
+
+ *  Uso:
+ *    ./sgbdlite
+ *    Usuário padrão: admin  |  Senha padrão: sgbd123
+ * ================================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <time.h>
+
+/* ----------------------------------------------------------
+   Portabilidade: Windows vs Unix
+   ---------------------------------------------------------- */
+#ifdef _WIN32
+    #include <windows.h>
+    #define LIMPAR_TELA "cls"
+    static void criar_pasta(const char *dir) {
+        CreateDirectory(dir, NULL);
+    }
+#else
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #define LIMPAR_TELA "clear"
+    static void criar_pasta(const char *dir) {
+        mkdir(dir, 0755);
+    }
+#endif
+
+/* ================================================================
+   SEÇÃO 1 — CONSTANTES E MACROS
+   ================================================================ */
+
+/* Limites de tamanho dos campos */
+#define MAX_REGISTROS  5000   /* máximo de registros por categoria  */
+#define TAM_NOME       100    /* nome completo                      */
+#define TAM_CPF        15     /* 000.000.000-00 + \0                */
+#define TAM_TEL        20     /* número de telefone                 */
+#define TAM_EMAIL      100    /* e-mail                             */
+#define TAM_CAMPO      60     /* campos específicos da categoria    */
+#define TAM_OBS        200    /* observações livres                 */
+#define TAM_DATA       20     /* dd/mm/aaaa hh:mm                   */
+#define TAM_SENHA      64     /* senha do administrador             */
+#define TAM_LINHA      900    /* tamanho máximo de linha no CSV     */
+
+#define NUM_CATEGORIAS 4      /* total de categorias disponíveis    */
+#define PASTA_DADOS    "dados_sgbd"  /* pasta onde ficam os arquivos */
+
+/* Credenciais do administrador (em produção: usar hash + salt) */
+#define ADMIN_USUARIO  "admin"
+#define ADMIN_SENHA    "sgbd123"
+
+/* Códigos de cores ANSI para terminal colorido */
+#define C_RESET   "\033[0m"
+#define C_BOLD    "\033[1m"
+#define C_VERDE   "\033[32m"
+#define C_AZUL    "\033[34m"
+#define C_CIANO   "\033[36m"
+#define C_AMAR    "\033[33m"
+#define C_VERM    "\033[31m"
+#define C_MGNT    "\033[35m"
+
+/* ================================================================
+   SEÇÃO 2 — ESTRUTURAS DE DADOS
+   ================================================================ */
+
+/*
+ * Registro — representa um cadastro completo de uma pessoa.
+ *
+ * Campos fixos:
+ *   id            → identificador único, gerado automaticamente
+ *   nome          → nome completo
+ *   cpf           → CPF formatado (000.000.000-00)
+ *   telefone      → contato telefônico
+ *   email         → endereço de e-mail
+ *   data_cadastro → data/hora automática ao inserir
+ *   observacoes   → notas livres
+ *
+ * Campos genéricos (campo1/campo2/campo3):
+ *   Recebem rótulos específicos por categoria:
+ *   Escola   → Turma   | Período | Série
+ *   Hospital → Quarto  | Setor   | Convênio
+ *   Empresa  → Cargo   | Depart. | Matrícula
+ *   Clínica  → Espec.  | Médico  | Convênio
+ */
+typedef struct {
+    int  id;
+    char nome[TAM_NOME];
+    char cpf[TAM_CPF];
+    char telefone[TAM_TEL];
+    char email[TAM_EMAIL];
+    char campo1[TAM_CAMPO];
+    char campo2[TAM_CAMPO];
+    char campo3[TAM_CAMPO];
+    char data_cadastro[TAM_DATA];
+    char observacoes[TAM_OBS];
+} Registro;
+
+/*
+ * BancoDados — armazena todos os registros de UMA categoria.
+ *
+ *   registros[]  → array estático de registros em memória
+ *   total        → quantidade de registros atualmente carregados
+ *   proximo_id   → próximo ID a ser atribuído (auto-incremento)
+ *   nome         → nome legível da categoria (ex: "Escola")
+ *   arquivo      → caminho do arquivo CSV desta categoria
+ *   label1/2/3   → rótulos dos campos genéricos
+ *   icone        → prefixo visual usado nos menus
+ */
+typedef struct {
+    Registro registros[MAX_REGISTROS];
+    int      total;
+    int      proximo_id;
+    char     nome[30];
+    char     arquivo[150];
+    char     label1[30];
+    char     label2[30];
+    char     label3[30];
+    char     icone[10];
+} BancoDados;
+
+/* ================================================================
+   SEÇÃO 3 — VARIÁVEIS GLOBAIS
+   ================================================================ */
+
+/* Array com todos os bancos de dados disponíveis */
+BancoDados bancos[NUM_CATEGORIAS];
+
+/* ================================================================
+   SEÇÃO 4 — PROTÓTIPOS DE FUNÇÕES
+   ================================================================ */
+
+/* --- Utilitários de terminal --- */
+void limpar_tela(void);
+void pausar(void);
+void linha(char c, int tam);
+void cabecalho(const char *titulo);
+
+/* --- Manipulação de strings --- */
+void trim(char *str);
+void str_para_lower(char *dest, const char *src);
+void obter_data(char *buf, int tam);
+void ler_campo(const char *prompt, char *dest, int max);
+void ler_campo_opcional(const char *label, char *dest, int max, const char *atual);
+int  ler_inteiro(const char *prompt);
+
+/* --- Validação de dados --- */
+int  cpf_valido(const char *cpf);
+void formatar_cpf(char *cpf);
+int  cpf_duplicado(const BancoDados *bd, const char *cpf);
+
+/* --- Arquivos (persistência) --- */
+void inicializar_sistema(void);
+int  carregar_banco(BancoDados *bd);
+int  salvar_banco(BancoDados *bd);
+void gerar_registros_fantasmas(BancoDados *bd, int categoria);
+
+/* --- Ordenação --- */
+int  cmp_nome(const void *a, const void *b);
+int  cmp_id(const void *a, const void *b);
+
+/* --- Exibição --- */
+void exibir_registro_completo(const BancoDados *bd, const Registro *r);
+void exibir_cabecalho_tabela(const BancoDados *bd);
+void exibir_linha_tabela(const Registro *r);
+
+/* --- Busca --- */
+Registro *buscar_por_id(BancoDados *bd, int id);
+void      buscar_por_nome(BancoDados *bd);
+
+/* --- CRUD --- */
+void adicionar_registro(BancoDados *bd);
+void deletar_registro(BancoDados *bd);
+void editar_registro(BancoDados *bd);
+void listar_registros(BancoDados *bd);
+
+/* --- Menus --- */
+int  menu_login(void);
+void menu_principal(BancoDados *bd);
+void menu_categorias(void);
+
+/* ================================================================
+   SEÇÃO 5 — UTILITÁRIOS DE TERMINAL
+   ================================================================ */
+
+/* Limpa a tela do terminal (Windows: cls / Unix: clear) */
+void limpar_tela(void) {
+    system(LIMPAR_TELA);
+}
+
+/*
+ * Pausa o programa até o usuário pressionar ENTER.
+ * Consome qualquer caractere residual no buffer de entrada.
+ */
+void pausar(void) {
+    printf("\n" C_AMAR "  Pressione ENTER para continuar..." C_RESET);
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+/* Imprime uma linha separadora com o caractere 'c' repetido 'tam' vezes */
+void linha(char c, int tam) {
+    printf("  ");
+    for (int i = 0; i < tam; i++) putchar(c);
+    putchar('\n');
+}
+
+/* Limpa a tela e exibe o cabeçalho padrão do sistema */
+void cabecalho(const char *titulo) {
+    limpar_tela();
+    printf("\n");
+    linha('=', 62);
+    printf("  " C_BOLD C_CIANO "  SGBDLite — %s" C_RESET "\n", titulo);
+    linha('=', 62);
+    printf("\n");
+}
+
+/* ================================================================
+   SEÇÃO 6 — MANIPULAÇÃO DE STRINGS E ENTRADA
+   ================================================================ */
+
+/*
+ * Remove espaços em branco no início e no fim de uma string.
+ * Modifica a string in-place.
+ */
+void trim(char *str) {
+    if (!str || !*str) return;
+
+    /* Remove espaços do início */
+    char *inicio = str;
+    while (isspace((unsigned char)*inicio)) inicio++;
+    if (inicio != str)
+        memmove(str, inicio, strlen(inicio) + 1);
+
+    /* Remove espaços do final */
+    char *fim = str + strlen(str) - 1;
+    while (fim > str && isspace((unsigned char)*fim)) fim--;
+    *(fim + 1) = '\0';
+}
+
+/*
+ * Converte 'src' para minúsculas e armazena em 'dest'.
+ * Usado na busca case-insensitive.
+ */
+void str_para_lower(char *dest, const char *src) {
+    int i;
+    for (i = 0; src[i]; i++)
+        dest[i] = (char)tolower((unsigned char)src[i]);
+    dest[i] = '\0';
+}
+
+/* Obtém data e hora atuais no formato dd/mm/aaaa hh:mm */
+void obter_data(char *buf, int tam) {
+    time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+    strftime(buf, tam, "%d/%m/%Y %H:%M", tm_info);
+}
+
+/*
+ * Lê uma string do teclado com prompt.
+ * Limita ao tamanho máximo e remove newline e espaços extras.
+ */
+void ler_campo(const char *prompt, char *dest, int max) {
+    printf("  %s", prompt);
+    if (fgets(dest, max, stdin)) {
+        dest[strcspn(dest, "\n")] = '\0';
+        trim(dest);
+    }
+}
+
+/*
+ * Lê um campo opcional: se o usuário pressionar ENTER sem digitar,
+ * mantém o valor atual. Caso contrário, substitui pelo novo.
+ */
+void ler_campo_opcional(const char *label, char *dest, int max, const char *atual) {
+    char buf[TAM_LINHA] = {0};
+    printf("  %-14s [" C_AMAR "%s" C_RESET "]: ", label, atual);
+    if (fgets(buf, sizeof(buf), stdin)) {
+        buf[strcspn(buf, "\n")] = '\0';
+        trim(buf);
+        if (strlen(buf) > 0)
+            strncpy(dest, buf, max - 1);
+        /* Se vazio, dest permanece com valor atual */
+    }
+}
+
+/*
+ * Lê um número inteiro do teclado com validação básica.
+ * Descarta caracteres extras para não poluir o buffer.
+ */
+int ler_inteiro(const char *prompt) {
+    printf("  %s", prompt);
+    int val = 0;
+    if (scanf("%d", &val) != 1) val = -1;
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF); /* esvazia buffer */
+    return val;
+}
+
+/* ================================================================
+   SEÇÃO 7 — VALIDAÇÃO DE DADOS
+   ================================================================ */
+
+/*
+ * Verifica se o CPF tem exatamente 11 dígitos numéricos.
+ * Aceita formatos com ou sem pontuação: 00000000000 ou 000.000.000-00
+ * Retorna 1 se válido, 0 se inválido.
+ */
+int cpf_valido(const char *cpf) {
+    int digitos = 0;
+    for (int i = 0; cpf[i]; i++) {
+        if (isdigit((unsigned char)cpf[i]))
+            digitos++;
+        else if (cpf[i] != '.' && cpf[i] != '-')
+            return 0; /* caractere inválido */
+    }
+    return (digitos == 11);
+}
+
+/*
+ * Converte qualquer formato de CPF para o padrão 000.000.000-00.
+ * Opera in-place na string recebida.
+ */
+void formatar_cpf(char *cpf) {
+    char d[12] = {0};
+    int j = 0;
+    for (int i = 0; cpf[i] && j < 11; i++)
+        if (isdigit((unsigned char)cpf[i]))
+            d[j++] = cpf[i];
+    if (j == 11)
+        snprintf(cpf, TAM_CPF, "%c%c%c.%c%c%c.%c%c%c-%c%c",
+            d[0],d[1],d[2], d[3],d[4],d[5], d[6],d[7],d[8], d[9],d[10]);
+}
+
+/*
+ * Verifica se o CPF já existe no banco de dados informado.
+ * Retorna 1 se duplicado, 0 se disponível.
+ */
+int cpf_duplicado(const BancoDados *bd, const char *cpf) {
+    for (int i = 0; i < bd->total; i++)
+        if (strcmp(bd->registros[i].cpf, cpf) == 0)
+            return 1;
+    return 0;
+}
+
+/* ================================================================
+   SEÇÃO 8 — PERSISTÊNCIA EM ARQUIVOS (CSV)
+   ================================================================ */
+
+/*
+ * Inicializa os metadados de cada banco de dados e cria a pasta
+ * de armazenamento caso não exista. Em seguida carrega todos os
+ * arquivos CSV para a memória.
+ *
+ * Formato do arquivo: uma linha de cabeçalho + registros separados por '|'
+ *   id|nome|cpf|telefone|email|campo1|campo2|campo3|data_cadastro|observacoes
+ */
+void inicializar_sistema(void) {
+    criar_pasta(PASTA_DADOS);
+
+    /* ---- Banco 0: Escola ---- */
+    strncpy(bancos[0].nome,   "Escola",           29);
+    strncpy(bancos[0].label1, "Turma",            29);
+    strncpy(bancos[0].label2, "Periodo",          29);
+    strncpy(bancos[0].label3, "Serie",            29);
+    strncpy(bancos[0].icone,  "[ESC]",            9);
+    snprintf(bancos[0].arquivo, 149, "%s/escola.csv", PASTA_DADOS);
+
+    /* ---- Banco 1: Hospital ---- */
+    strncpy(bancos[1].nome,   "Hospital",         29);
+    strncpy(bancos[1].label1, "Quarto",           29);
+    strncpy(bancos[1].label2, "Setor",            29);
+    strncpy(bancos[1].label3, "Convenio",         29);
+    strncpy(bancos[1].icone,  "[HOS]",            9);
+    snprintf(bancos[1].arquivo, 149, "%s/hospital.csv", PASTA_DADOS);
+
+    /* ---- Banco 2: Empresa ---- */
+    strncpy(bancos[2].nome,   "Empresa",          29);
+    strncpy(bancos[2].label1, "Cargo",            29);
+    strncpy(bancos[2].label2, "Departamento",     29);
+    strncpy(bancos[2].label3, "Matricula",        29);
+    strncpy(bancos[2].icone,  "[EMP]",            9);
+    snprintf(bancos[2].arquivo, 149, "%s/empresa.csv", PASTA_DADOS);
+
+    /* ---- Banco 3: Clinica ---- */
+    strncpy(bancos[3].nome,   "Clinica",          29);
+    strncpy(bancos[3].label1, "Especialidade",    29);
+    strncpy(bancos[3].label2, "Medico",           29);
+    strncpy(bancos[3].label3, "Convenio",         29);
+    strncpy(bancos[3].icone,  "[CLI]",            9);
+    snprintf(bancos[3].arquivo, 149, "%s/clinica.csv", PASTA_DADOS);
+
+    /* Carregar todos os bancos do disco para a memória */
+    for (int i = 0; i < NUM_CATEGORIAS; i++) {
+        bancos[i].total      = 0;
+        bancos[i].proximo_id = 1;
+
+        if (!carregar_banco(&bancos[i])) {
+            gerar_registros_fantasmas(&bancos[i], i);
+            salvar_banco(&bancos[i]);
+        }
+    }
+}
+
+/*
+ * Lê o arquivo CSV de uma categoria e preenche o array de registros
+ * em memória. Também calcula o próximo ID disponível.
+ *
+ * O delimitador '|' foi escolhido por ser raro em nomes e textos comuns,
+ * evitando conflitos com vírgulas presentes em campos de texto livre.
+ *
+ * Retorna 1 se o arquivo existia, 0 caso contrário (primeira execução).
+ */
+
+/*
+ * Gera registros automáticos para popular o banco na primeira execução.
+ * Cada categoria recebe 20 registros fictícios.
+ */
+void gerar_registros_fantasmas(BancoDados *bd, int categoria) {
+    const char *nomes[] = {
+        "Lucas Silva", "Mariana Costa", "Pedro Henrique", "Ana Beatriz",
+        "Carlos Eduardo", "Fernanda Lima", "Rafael Souza", "Julia Martins",
+        "Bruno Oliveira", "Camila Rocha", "Gabriel Alves", "Larissa Gomes",
+        "Thiago Pereira", "Amanda Ribeiro", "Matheus Fernandes", "Bianca Melo",
+        "Joao Victor", "Patricia Santos", "Gustavo Almeida", "Leticia Araujo"
+    };
+
+    for (int i = 0; i < 20; i++) {
+        Registro *r = &bd->registros[bd->total];
+
+        r->id = bd->proximo_id++;
+        snprintf(r->nome, TAM_NOME, "%s", nomes[i]);
+
+        snprintf(r->cpf, TAM_CPF, "%03d.%03d.%03d-%02d",
+                 100 + i, 200 + i, 300 + i, 10 + i);
+
+        snprintf(r->telefone, TAM_TEL, "(86) 9%04d-%04d",
+                 1000 + i, 2000 + i);
+
+        snprintf(r->email, TAM_EMAIL,
+                 "usuario%d@sgbdlite.com", i + 1);
+
+        obter_data(r->data_cadastro, TAM_DATA);
+
+        strcpy(r->observacoes, "Registro fantasma gerado automaticamente.");
+
+        switch (categoria) {
+            case 0:
+                snprintf(r->campo1, TAM_CAMPO, "Turma %dA", i + 1);
+                snprintf(r->campo2, TAM_CAMPO, "Manha");
+                snprintf(r->campo3, TAM_CAMPO, "%d Ano", (i % 3) + 1);
+                break;
+
+            case 1:
+                snprintf(r->campo1, TAM_CAMPO, "Quarto %d", 100 + i);
+                snprintf(r->campo2, TAM_CAMPO, "Setor %d", (i % 5) + 1);
+                snprintf(r->campo3, TAM_CAMPO, "Convenio Premium");
+                break;
+
+            case 2:
+                snprintf(r->campo1, TAM_CAMPO, "Funcionario");
+                snprintf(r->campo2, TAM_CAMPO, "TI");
+                snprintf(r->campo3, TAM_CAMPO, "MAT-%04d", i + 1);
+                break;
+
+            case 3:
+                snprintf(r->campo1, TAM_CAMPO, "Clinico Geral");
+                snprintf(r->campo2, TAM_CAMPO, "Dr. Roberto");
+                snprintf(r->campo3, TAM_CAMPO, "Convenio Plus");
+                break;
+        }
+
+        bd->total++;
+    }
+}
+
+
+int carregar_banco(BancoDados *bd) {
+    FILE *f = fopen(bd->arquivo, "r");
+    if (!f) return 0; /* arquivo ainda não criado — primeira vez */
+
+    char linha_buf[TAM_LINHA];
+
+    /* Pula a linha de cabeçalho */
+    if (!fgets(linha_buf, sizeof(linha_buf), f)) {
+        fclose(f); return 0;
+    }
+
+    bd->total      = 0;
+    bd->proximo_id = 1;
+
+    while (fgets(linha_buf, sizeof(linha_buf), f) && bd->total < MAX_REGISTROS) {
+        linha_buf[strcspn(linha_buf, "\n\r")] = '\0';
+        if (strlen(linha_buf) < 3) continue; /* linha vazia */
+
+        Registro *r   = &bd->registros[bd->total];
+        char copia[TAM_LINHA];
+        strncpy(copia, linha_buf, TAM_LINHA - 1);
+
+        /* Desempacota cada campo usando strtok com delimitador '|' */
+        char *tok;
+        tok = strtok(copia, "|");  if (!tok) continue;
+        r->id = atoi(tok);
+
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->nome,          tok, TAM_NOME  - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->cpf,           tok, TAM_CPF   - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->telefone,      tok, TAM_TEL   - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->email,         tok, TAM_EMAIL - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->campo1,        tok, TAM_CAMPO - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->campo2,        tok, TAM_CAMPO - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->campo3,        tok, TAM_CAMPO - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->data_cadastro, tok, TAM_DATA  - 1);
+        tok = strtok(NULL, "|"); if (tok) strncpy(r->observacoes,   tok, TAM_OBS   - 1);
+
+        /* Garante que o próximo ID seja sempre maior que qualquer ID existente */
+        if (r->id >= bd->proximo_id)
+            bd->proximo_id = r->id + 1;
+
+        bd->total++;
+    }
+
+    fclose(f);
+    return 1;
+}
+
+/*
+ * Grava todos os registros da memória no arquivo CSV correspondente.
+ * Chamado automaticamente após qualquer operação de escrita (add/edit/delete).
+ *
+ * Retorna 1 em sucesso, 0 em falha de I/O.
+ */
+int salvar_banco(BancoDados *bd) {
+    FILE *f = fopen(bd->arquivo, "w");
+    if (!f) {
+        printf(C_VERM "\n  [ERRO] Falha ao salvar: %s\n" C_RESET, bd->arquivo);
+        return 0;
+    }
+
+    /* Linha de cabeçalho (facilita leitura manual do CSV) */
+    fprintf(f, "id|nome|cpf|telefone|email|campo1|campo2|campo3|data_cadastro|observacoes\n");
+
+    /* Grava cada registro como uma linha */
+    for (int i = 0; i < bd->total; i++) {
+        const Registro *r = &bd->registros[i];
+        fprintf(f, "%d|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
+            r->id,
+            r->nome,
+            r->cpf,
+            r->telefone,
+            r->email,
+            r->campo1,
+            r->campo2,
+            r->campo3,
+            r->data_cadastro,
+            r->observacoes);
+    }
+
+    fclose(f);
+    return 1;
+}
+
+/* ================================================================
+   SEÇÃO 9 — ORDENAÇÃO
+   ================================================================ */
+
+/*
+ * Funções de comparação para qsort().
+ * cmp_nome → ordena alfabeticamente pelo nome
+ * cmp_id   → ordena numericamente pelo ID
+ */
+int cmp_nome(const void *a, const void *b) {
+    return strcmp(((const Registro *)a)->nome,
+                  ((const Registro *)b)->nome);
+}
+
+int cmp_id(const void *a, const void *b) {
+    return ((const Registro *)a)->id - ((const Registro *)b)->id;
+}
+
+/* ================================================================
+   SEÇÃO 10 — EXIBIÇÃO FORMATADA
+   ================================================================ */
+
+/*
+ * Exibe todas as informações de um único registro em formato vertical
+ * (ficha completa). Usa rótulos específicos da categoria.
+ */
+void exibir_registro_completo(const BancoDados *bd, const Registro *r) {
+    linha('-', 62);
+    printf("  " C_BOLD C_CIANO "ID:           " C_RESET C_VERDE "#%04d\n" C_RESET, r->id);
+    printf("  " C_BOLD         "Nome:         " C_RESET "%s\n",   r->nome);
+    printf("  " C_BOLD         "CPF:          " C_RESET "%s\n",   r->cpf);
+    printf("  " C_BOLD         "Telefone:     " C_RESET "%s\n",   r->telefone);
+    printf("  " C_BOLD         "Email:        " C_RESET "%s\n",   r->email);
+    printf("  " C_BOLD "%-14s" C_RESET "%s\n",   bd->label1, r->campo1);
+    printf("  " C_BOLD "%-14s" C_RESET "%s\n",   bd->label2, r->campo2);
+    printf("  " C_BOLD "%-14s" C_RESET "%s\n",   bd->label3, r->campo3);
+    printf("  " C_BOLD         "Cadastro:     " C_RESET "%s\n",   r->data_cadastro);
+    if (strlen(r->observacoes) > 0)
+        printf("  " C_BOLD     "Observacoes:  " C_RESET "%s\n",   r->observacoes);
+    linha('-', 62);
+}
+
+/* Imprime o cabeçalho da tabela resumida com os rótulos da categoria */
+void exibir_cabecalho_tabela(const BancoDados *bd) {
+    printf("  " C_BOLD C_AZUL
+           "%-5s %-30s %-15s %-15s %-14s\n" C_RESET,
+           "ID", "Nome", bd->label1, bd->label2, "CPF");
+    linha('-', 82);
+}
+
+/* Imprime uma linha na tabela resumida */
+void exibir_linha_tabela(const Registro *r) {
+    printf("  " C_VERDE "#%-4d" C_RESET " %-30s %-15s %-15s %-14s\n",
+           r->id, r->nome, r->campo1, r->campo2, r->cpf);
+}
+
+/* ================================================================
+   SEÇÃO 11 — BUSCA
+   ================================================================ */
+
+/*
+ * Localiza um registro pelo ID usando busca linear.
+ * Retorna ponteiro para o registro, ou NULL se não encontrado.
+ *
+ * Para bancos com até 5000 registros, a busca linear é rápida
+ * (< 1 ms). Para volumes maiores, seria substituída por busca binária
+ * após ordenação por ID, ou por hash table.
+ */
+Registro *buscar_por_id(BancoDados *bd, int id) {
+    for (int i = 0; i < bd->total; i++)
+        if (bd->registros[i].id == id)
+            return &bd->registros[i];
+    return NULL;
+}
+
+/*
+ * Busca registros cujo nome contenha a string digitada (parcial).
+ * A comparação é case-insensitive: "ana" encontra "Ana Paula" e "JOANA".
+ *
+ * Algoritmo:
+ *   1. Converte a query para minúsculas (str_para_lower)
+ *   2. Para cada registro, converte o nome para minúsculas
+ *   3. Usa strstr() para verificar se a query está contida no nome
+ *   4. Coleta ponteiros para os registros que combinam
+ *   5. Exibe resultado simples (1 resultado) ou tabela (vários)
+ *
+ * Complexidade: O(n) — percorre todos os registros uma vez.
+ */
+void buscar_por_nome(BancoDados *bd) {
+    cabecalho("Buscar por Nome");
+    printf("  Categoria: " C_AMAR "%s" C_RESET
+           "  |  Registros: " C_VERDE "%d" C_RESET "\n\n", bd->nome, bd->total);
+
+    if (bd->total == 0) {
+        printf("  " C_AMAR "Nenhum registro cadastrado nesta categoria.\n" C_RESET);
+        pausar(); return;
+    }
+
+    char query[TAM_NOME], query_low[TAM_NOME];
+    ler_campo("Parte do nome (busca parcial): ", query, TAM_NOME);
+    if (strlen(query) == 0) { pausar(); return; }
+    str_para_lower(query_low, query);
+
+    /* Coleta ponteiros para os registros correspondentes */
+    Registro *res[MAX_REGISTROS];
+    int total_res = 0;
+
+    for (int i = 0; i < bd->total; i++) {
+        char nome_low[TAM_NOME];
+        str_para_lower(nome_low, bd->registros[i].nome);
+        if (strstr(nome_low, query_low))
+            res[total_res++] = &bd->registros[i];
+    }
+
+    printf("\n");
+
+    if (total_res == 0) {
+        printf("  " C_VERM "Nenhum resultado para \"%s\".\n" C_RESET, query);
+        pausar(); return;
+    }
+
+    printf("  " C_VERDE "%d resultado(s) encontrado(s) para \"%s\":\n\n" C_RESET,
+           total_res, query);
+
+    if (total_res == 1) {
+        /* Único resultado: exibe ficha completa diretamente */
+        exibir_registro_completo(bd, res[0]);
+    } else {
+        /* Vários resultados: exibe tabela resumida */
+        exibir_cabecalho_tabela(bd);
+        for (int i = 0; i < total_res; i++)
+            exibir_linha_tabela(res[i]);
+        linha('-', 82);
+
+        /* Permite ver a ficha completa de qualquer resultado */
+        printf("\n  Ver ficha completa de um registro (ID ou 0 para voltar): ");
+        int id_det;
+        if (scanf("%d", &id_det) == 1 && id_det > 0) {
+            getchar();
+            for (int i = 0; i < total_res; i++) {
+                if (res[i]->id == id_det) {
+                    printf("\n");
+                    exibir_registro_completo(bd, res[i]);
+                    break;
+                }
+            }
+        } else {
+            getchar();
+        }
+    }
+
+    pausar();
+}
+
+/* ================================================================
+   SEÇÃO 12 — CRUD: ADICIONAR
+   ================================================================ */
+
+/*
+ * Adiciona um novo registro ao banco de dados.
+ *
+ * Passos:
+ *   1. Valida se o limite não foi atingido
+ *   2. Coleta todos os campos com validação
+ *   3. Verifica duplicidade de CPF
+ *   4. Exibe prévia e solicita confirmação
+ *   5. Insere na memória, incrementa ID e salva no disco
+ */
+void adicionar_registro(BancoDados *bd) {
+    cabecalho("Adicionar Registro");
+    printf("  Categoria: " C_AMAR "%s" C_RESET "\n\n", bd->nome);
+
+    if (bd->total >= MAX_REGISTROS) {
+        printf("  " C_VERM "Limite de %d registros atingido.\n" C_RESET, MAX_REGISTROS);
+        pausar(); return;
+    }
+
+    Registro novo;
+    memset(&novo, 0, sizeof(Registro));
+    novo.id = bd->proximo_id;
+
+    /* --- Nome: mínimo 3 caracteres --- */
+    do {
+        ler_campo("Nome completo:  ", novo.nome, TAM_NOME);
+        if (strlen(novo.nome) < 3)
+            printf("  " C_VERM "Nome muito curto. Minimo 3 caracteres.\n" C_RESET);
+    } while (strlen(novo.nome) < 3);
+
+    /* --- CPF: formato e unicidade --- */
+    do {
+        ler_campo("CPF (11 digitos): ", novo.cpf, TAM_CPF);
+        if (!cpf_valido(novo.cpf)) {
+            printf("  " C_VERM "CPF invalido. Use 11 digitos numericos.\n" C_RESET);
+            memset(novo.cpf, 0, TAM_CPF);
+            continue;
+        }
+        formatar_cpf(novo.cpf);
+        if (cpf_duplicado(bd, novo.cpf)) {
+            printf("  " C_VERM "CPF ja cadastrado nesta categoria!\n" C_RESET);
+            memset(novo.cpf, 0, TAM_CPF);
+        }
+    } while (strlen(novo.cpf) == 0);
+
+    /* --- Campos básicos --- */
+    ler_campo("Telefone:       ", novo.telefone, TAM_TEL);
+    ler_campo("Email:          ", novo.email,    TAM_EMAIL);
+
+    /* --- Campos específicos da categoria --- */
+    printf("\n  " C_CIANO "--- Campos especificos: %s ---\n\n" C_RESET, bd->nome);
+
+    char prompt[40];
+    snprintf(prompt, sizeof(prompt), "%-16s: ", bd->label1);
+    ler_campo(prompt, novo.campo1, TAM_CAMPO);
+    snprintf(prompt, sizeof(prompt), "%-16s: ", bd->label2);
+    ler_campo(prompt, novo.campo2, TAM_CAMPO);
+    snprintf(prompt, sizeof(prompt), "%-16s: ", bd->label3);
+    ler_campo(prompt, novo.campo3, TAM_CAMPO);
+
+    printf("\n");
+    ler_campo("Observacoes (opcional): ", novo.observacoes, TAM_OBS);
+
+    /* Timestamp automático */
+    obter_data(novo.data_cadastro, TAM_DATA);
+
+    /* --- Prévia e confirmação --- */
+    printf("\n  " C_BOLD "--- PREVIEW DO REGISTRO ---\n" C_RESET);
+    exibir_registro_completo(bd, &novo);
+
+    printf("\n  Confirmar cadastro? (s/n): ");
+    char conf[4];
+    if (!fgets(conf, sizeof(conf), stdin) || tolower((unsigned char)conf[0]) != 's') {
+        printf("  " C_AMAR "Cadastro cancelado.\n" C_RESET);
+        pausar(); return;
+    }
+
+    /* Insere na memória e salva */
+    bd->registros[bd->total++] = novo;
+    bd->proximo_id++;
+    salvar_banco(bd);
+
+    printf("  " C_VERDE "Registro #%04d adicionado com sucesso!\n" C_RESET, novo.id);
+    pausar();
+}
+
+/* ================================================================
+   SEÇÃO 13 — CRUD: DELETAR
+   ================================================================ */
+
+/*
+ * Remove um registro do banco de dados.
+ * Permite deletar por ID ou por busca de nome.
+ * Solicita confirmação antes de efetivar a exclusão.
+ *
+ * Remoção física: desloca todos os registros seguintes uma posição
+ * para trás no array, sobrescrevendo o registro excluído.
+ */
+void deletar_registro(BancoDados *bd) {
+    cabecalho("Deletar Registro");
+    printf("  Categoria: " C_AMAR "%s" C_RESET
+           "  |  Registros: " C_VERDE "%d" C_RESET "\n\n", bd->nome, bd->total);
+
+    if (bd->total == 0) {
+        printf("  " C_AMAR "Nenhum registro para deletar.\n" C_RESET);
+        pausar(); return;
+    }
+
+    printf("  Buscar por:\n");
+    printf("  " C_AZUL "[1]" C_RESET " ID\n");
+    printf("  " C_AZUL "[2]" C_RESET " Nome\n");
+    printf("  " C_AZUL "[0]" C_RESET " Cancelar\n\n");
+
+    int opcao = ler_inteiro("Opcao: ");
+    Registro *alvo = NULL;
+
+    if (opcao == 1) {
+        int id = ler_inteiro("ID do registro: ");
+        alvo = buscar_por_id(bd, id);
+
+    } else if (opcao == 2) {
+        char nome[TAM_NOME], nome_low[TAM_NOME];
+        ler_campo("Nome (parcial): ", nome, TAM_NOME);
+        str_para_lower(nome_low, nome);
+
+        /* Coleta candidatos */
+        Registro *cands[MAX_REGISTROS];
+        int qtd = 0;
+        for (int i = 0; i < bd->total; i++) {
+            char n[TAM_NOME];
+            str_para_lower(n, bd->registros[i].nome);
+            if (strstr(n, nome_low))
+                cands[qtd++] = &bd->registros[i];
+        }
+
+        if (qtd == 0) {
+            printf("  " C_VERM "Nenhum registro encontrado.\n" C_RESET);
+            pausar(); return;
+        } else if (qtd == 1) {
+            alvo = cands[0];
+        } else {
+            printf("\n  Multiplos resultados encontrados:\n");
+            exibir_cabecalho_tabela(bd);
+            for (int i = 0; i < qtd; i++) exibir_linha_tabela(cands[i]);
+            linha('-', 82);
+            int id = ler_inteiro("\n  ID do registro a deletar: ");
+            alvo = buscar_por_id(bd, id);
+        }
+    } else {
+        return; /* cancelado */
+    }
+
+    if (!alvo) {
+        printf("  " C_VERM "Registro nao encontrado.\n" C_RESET);
+        pausar(); return;
+    }
+
+    /* Exibe o registro a ser removido */
+    printf("\n  Registro selecionado para exclusao:\n");
+    exibir_registro_completo(bd, alvo);
+
+    printf("\n  " C_VERM C_BOLD
+           "ATENCAO: Esta acao e irreversivel! Confirmar exclusao? (s/n): "
+           C_RESET);
+    char conf[4];
+    if (!fgets(conf, sizeof(conf), stdin) || tolower((unsigned char)conf[0]) != 's') {
+        printf("  Exclusao cancelada.\n");
+        pausar(); return;
+    }
+
+    /* Remove deslocando os registros subsequentes */
+    int idx    = (int)(alvo - bd->registros);
+    int id_del = alvo->id;
+    for (int i = idx; i < bd->total - 1; i++)
+        bd->registros[i] = bd->registros[i + 1];
+    bd->total--;
+
+    salvar_banco(bd);
+    printf("  " C_VERDE "Registro #%04d excluido com sucesso.\n" C_RESET, id_del);
+    pausar();
+}
+
+/* ================================================================
+   SEÇÃO 14 — CRUD: EDITAR
+   ================================================================ */
+
+/*
+ * Edita campos de um registro existente.
+ * O CPF não pode ser alterado para preservar a integridade.
+ * Campos deixados em branco mantêm seus valores originais.
+ * A edição só é salva após confirmação do usuário.
+ */
+void editar_registro(BancoDados *bd) {
+    cabecalho("Editar Registro");
+    printf("  Categoria: " C_AMAR "%s" C_RESET "\n\n", bd->nome);
+
+    if (bd->total == 0) {
+        printf("  " C_AMAR "Nenhum registro para editar.\n" C_RESET);
+        pausar(); return;
+    }
+
+    int id = ler_inteiro("ID do registro a editar: ");
+    Registro *r = buscar_por_id(bd, id);
+
+    if (!r) {
+        printf("  " C_VERM "Registro #%d nao encontrado.\n" C_RESET, id);
+        pausar(); return;
+    }
+
+    printf("\n  Registro atual:\n");
+    exibir_registro_completo(bd, r);
+    printf("\n  " C_AMAR "Deixe em branco para manter o valor atual.\n\n" C_RESET);
+
+    /* Salva backup para caso de cancelamento */
+    Registro backup = *r;
+
+    ler_campo_opcional("Nome",        r->nome,       TAM_NOME,  r->nome);
+    ler_campo_opcional("Telefone",    r->telefone,   TAM_TEL,   r->telefone);
+    ler_campo_opcional("Email",       r->email,      TAM_EMAIL, r->email);
+
+    printf("\n  " C_CIANO "--- Campos especificos ---\n\n" C_RESET);
+    ler_campo_opcional(bd->label1,    r->campo1,     TAM_CAMPO, r->campo1);
+    ler_campo_opcional(bd->label2,    r->campo2,     TAM_CAMPO, r->campo2);
+    ler_campo_opcional(bd->label3,    r->campo3,     TAM_CAMPO, r->campo3);
+    ler_campo_opcional("Observacoes", r->observacoes, TAM_OBS,  r->observacoes);
+
+    printf("\n  Confirmar alteracoes? (s/n): ");
+    char conf[4];
+    if (!fgets(conf, sizeof(conf), stdin) || tolower((unsigned char)conf[0]) != 's') {
+        *r = backup; /* restaura o estado original */
+        printf("  " C_AMAR "Edicao cancelada.\n" C_RESET);
+        pausar(); return;
+    }
+
+    salvar_banco(bd);
+    printf("  " C_VERDE "Registro #%04d atualizado com sucesso!\n" C_RESET, r->id);
+    pausar();
+}
+
+/* ================================================================
+   SEÇÃO 15 — CRUD: LISTAR
+   ================================================================ */
+
+/*
+ * Exibe todos os registros de uma categoria em formato de tabela.
+ * Permite escolher ordenação por nome ou por ID.
+ * Trabalha sobre uma cópia do array para não alterar a ordem original.
+ * Oferece opção de ver a ficha completa de qualquer registro.
+ */
+void listar_registros(BancoDados *bd) {
+    cabecalho("Listar Registros");
+    printf("  Categoria: " C_AMAR "%s" C_RESET
+           "  |  Registros: " C_VERDE "%d" C_RESET "\n\n", bd->nome, bd->total);
+
+    if (bd->total == 0) {
+        printf("  " C_AMAR "Nenhum registro cadastrado.\n" C_RESET);
+        pausar(); return;
+    }
+
+    printf("  Ordenar por:\n");
+    printf("  " C_AZUL "[1]" C_RESET " Nome (A-Z)\n");
+    printf("  " C_AZUL "[2]" C_RESET " ID (crescente)\n");
+    int ord = ler_inteiro("\n  Opcao: ");
+
+    /* Cópia local para ordenação sem afetar os dados originais */
+    Registro *copia = malloc(bd->total * sizeof(Registro));
+    if (!copia) {
+        printf("  " C_VERM "Memoria insuficiente.\n" C_RESET);
+        pausar(); return;
+    }
+    memcpy(copia, bd->registros, bd->total * sizeof(Registro));
+
+    if (ord == 1)
+        qsort(copia, bd->total, sizeof(Registro), cmp_nome);
+    else
+        qsort(copia, bd->total, sizeof(Registro), cmp_id);
+
+    printf("\n");
+    exibir_cabecalho_tabela(bd);
+    for (int i = 0; i < bd->total; i++)
+        exibir_linha_tabela(&copia[i]);
+    linha('-', 82);
+    printf("  Total: " C_VERDE "%d" C_RESET " registro(s)\n", bd->total);
+
+    /* Ver ficha completa */
+    printf("\n  Ver ficha completa (ID ou 0 para voltar): ");
+    int id_det;
+    if (scanf("%d", &id_det) == 1 && id_det > 0) {
+        getchar();
+        Registro *r = buscar_por_id(bd, id_det);
+        if (r) { printf("\n"); exibir_registro_completo(bd, r); }
+        else printf("  " C_VERM "ID nao encontrado.\n" C_RESET);
+    } else {
+        getchar();
+    }
+
+    free(copia);
+    pausar();
+}
+
+/* ================================================================
+   SEÇÃO 16 — SISTEMA DE LOGIN
+   ================================================================ */
+
+/*
+ * Exibe a tela de login e valida as credenciais do administrador.
+ * Limita a 3 tentativas por segurança.
+ * Retorna 1 em caso de sucesso, 0 em caso de bloqueio.
+ */
+int menu_login(void) {
+    int tentativas = 3;
+
+    while (tentativas > 0) {
+        cabecalho("Login do Administrador");
+        printf("  " C_BOLD "SGBDLite v1.0" C_RESET
+               " — Sistema de Gerenciamento de Banco de Dados\n");
+        printf("  Desenvolvido em Linguagem C\n\n");
+        linha('-', 62);
+        printf("  " C_AMAR "Tentativas restantes: %d\n\n" C_RESET, tentativas);
+
+        char usuario[TAM_NOME], senha[TAM_SENHA];
+        ler_campo("Usuario: ", usuario, TAM_NOME);
+        ler_campo("Senha:   ", senha,   TAM_SENHA);
+
+        if (strcmp(usuario, ADMIN_USUARIO) == 0 &&
+            strcmp(senha,   ADMIN_SENHA)   == 0) {
+            printf("\n  " C_VERDE
+                   "Login realizado com sucesso! Bem-vindo, %s.\n" C_RESET, usuario);
+            pausar();
+            return 1;
+        }
+
+        printf("\n  " C_VERM "Usuario ou senha incorretos.\n" C_RESET);
+        tentativas--;
+        if (tentativas > 0) pausar();
+    }
+
+    printf("\n  " C_VERM
+           "Numero maximo de tentativas atingido. Encerrando.\n" C_RESET);
+    return 0;
+}
+
+/* ================================================================
+   SEÇÃO 17 — MENUS PRINCIPAIS
+   ================================================================ */
+
+/*
+ * Menu principal de uma categoria específica.
+ * Loop até o usuário escolher sair ou trocar de categoria.
+ */
+void menu_principal(BancoDados *bd) {
+    int op;
+    do {
+        cabecalho("Menu Principal");
+        printf("  Categoria: " C_MGNT C_BOLD "%s %s" C_RESET
+               "  |  Registros: " C_VERDE "%d" C_RESET "\n\n",
+               bd->icone, bd->nome, bd->total);
+
+        printf("  " C_AZUL "[1]" C_RESET " Buscar por nome\n");
+        printf("  " C_AZUL "[2]" C_RESET " Deletar registro\n");
+        printf("  " C_AZUL "[3]" C_RESET " Adicionar registro\n");
+        printf("  " C_AZUL "[4]" C_RESET " Listar todos os registros\n");
+        printf("  " C_AZUL "[5]" C_RESET " Editar registro\n");
+        printf("  " C_AZUL "[6]" C_RESET " Trocar categoria\n");
+        printf("  " C_AZUL "[0]" C_RESET " Sair do sistema\n");
+
+        op = ler_inteiro("\n  Opcao: ");
+
+        switch (op) {
+            case 1: buscar_por_nome(bd);    break;
+            case 2: deletar_registro(bd);   break;
+            case 3: adicionar_registro(bd); break;
+            case 4: listar_registros(bd);   break;
+            case 5: editar_registro(bd);    break;
+            case 6: return; /* retorna para seleção de categoria */
+            case 0: break;
+            default:
+                printf("  " C_VERM "Opcao invalida.\n" C_RESET);
+                pausar();
+        }
+    } while (op != 0);
+}
+
+/*
+ * Menu de seleção de categoria.
+ * Loop externo que mantém o sistema rodando até o usuário sair.
+ */
+void menu_categorias(void) {
+    int op;
+    do {
+        cabecalho("Selecionar Categoria");
+        printf("  Escolha o banco de dados:\n\n");
+
+        for (int i = 0; i < NUM_CATEGORIAS; i++) {
+            printf("  " C_AZUL "[%d]" C_RESET " %s %-12s"
+                   C_AMAR " (%d registros)" C_RESET "\n",
+                   i + 1, bancos[i].icone, bancos[i].nome, bancos[i].total);
+        }
+        printf("  " C_AZUL "[0]" C_RESET " Sair do sistema\n");
+
+        op = ler_inteiro("\n  Opcao: ");
+
+        if (op >= 1 && op <= NUM_CATEGORIAS)
+            menu_principal(&bancos[op - 1]);
+        else if (op != 0) {
+            printf("  " C_VERM "Opcao invalida.\n" C_RESET);
+            pausar();
+        }
+    } while (op != 0);
+}
+
+/* ================================================================
+   SEÇÃO 18 — PONTO DE ENTRADA
+   ================================================================ */
+
+int main(void) {
+    /* Carrega todos os bancos de dados do disco para a memória */
+    inicializar_sistema();
+
+    /* Autenticação obrigatória */
+    if (!menu_login())
+        return 1;
+
+    /* Loop principal de categorias */
+    menu_categorias();
+
+    /* Mensagem de encerramento */
+    cabecalho("Encerrando o Sistema");
+    printf("  " C_VERDE "Todos os dados foram salvos automaticamente.\n" C_RESET);
+    printf("  " C_CIANO "Obrigado por usar o SGBDLite!\n\n" C_RESET);
+    linha('=', 62);
+    printf("\n");
+
+    return 0;
+}
+
+/* ================================================================
+   FIM DO ARQUIVO — sgbdlite.c
+   ================================================================ */
