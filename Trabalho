@@ -2,56 +2,108 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX 200
+#define MAX 300
+
+// ================= STRUCT =================
 
 typedef struct {
     int id;
     char nome[50];
     char cpf[20];
-    char info[50];
+
+    // ESCOLA
+    char matricula[20];
+    char turma[20];
+
+    // HOSPITAL
+    char convenio[30];
+    char tipoSanguineo[10];
+
+    // EMPRESA
+    char cargo[30];
+    char setor[30];
+
+    // CLINICA
+    char consulta[30];
+    char medico[30];
+
 } Registro;
+
+// ================= VARIÁVEIS =================
 
 Registro registros[MAX];
 int total = 0;
 
-// ---------------- SALVAR ----------------
+// ================= SALVAR =================
+
 void salvar(char arquivo[]) {
 
     FILE *f = fopen(arquivo, "w");
 
     if (f == NULL) {
-        printf("Erro ao salvar!\n");
+        printf("\nErro ao salvar arquivo!\n");
         return;
     }
 
     for (int i = 0; i < total; i++) {
 
-        fprintf(f, "%d|%s|%s|%s\n",
-                registros[i].id,
-                registros[i].nome,
-                registros[i].cpf,
-                registros[i].info);
+        fprintf(f,
+        "%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
+
+        registros[i].id,
+        registros[i].nome,
+        registros[i].cpf,
+
+        registros[i].matricula,
+        registros[i].turma,
+
+        registros[i].convenio,
+        registros[i].tipoSanguineo,
+
+        registros[i].cargo,
+        registros[i].setor,
+
+        registros[i].consulta,
+        registros[i].medico
+        );
     }
 
     fclose(f);
 }
 
-// ---------------- CARREGAR ----------------
+// ================= CARREGAR =================
+
 void carregar(char arquivo[]) {
 
     FILE *f = fopen(arquivo, "r");
 
     total = 0;
 
-    if (f == NULL) {
+    if (f == NULL)
         return;
-    }
 
-    while (fscanf(f, "%d|%49[^|]|%19[^|]|%49[^\n]\n",
-                  &registros[total].id,
-                  registros[total].nome,
-                  registros[total].cpf,
-                  registros[total].info) != EOF) {
+    while (
+        fscanf(f,
+        "%d|%49[^|]|%19[^|]|%19[^|]|%19[^|]|%29[^|]|%9[^|]|%29[^|]|%29[^|]|%29[^|]|%29[^\n]\n",
+
+        &registros[total].id,
+        registros[total].nome,
+        registros[total].cpf,
+
+        registros[total].matricula,
+        registros[total].turma,
+
+        registros[total].convenio,
+        registros[total].tipoSanguineo,
+
+        registros[total].cargo,
+        registros[total].setor,
+
+        registros[total].consulta,
+        registros[total].medico
+
+        ) != EOF
+    ) {
 
         total++;
     }
@@ -59,8 +111,9 @@ void carregar(char arquivo[]) {
     fclose(f);
 }
 
-// ---------------- DADOS INICIAIS ----------------
-void criarDadosIniciais(char arquivo[]) {
+// ================= DADOS INICIAIS =================
+
+void criarDadosIniciais(char arquivo[], int tipo) {
 
     FILE *f = fopen(arquivo, "r");
 
@@ -69,32 +122,115 @@ void criarDadosIniciais(char arquivo[]) {
         return;
     }
 
+    char nomes[20][50] = {
+        "Joao Silva",
+        "Maria Oliveira",
+        "Pedro Santos",
+        "Ana Clara",
+        "Lucas Ferreira",
+        "Juliana Costa",
+        "Carlos Souza",
+        "Fernanda Lima",
+        "Gabriel Alves",
+        "Beatriz Rocha",
+        "Rafael Martins",
+        "Larissa Melo",
+        "Mateus Barbosa",
+        "Camila Ribeiro",
+        "Bruno Carvalho",
+        "Amanda Gomes",
+        "Thiago Moreira",
+        "Isabela Araujo",
+        "Leonardo Nunes",
+        "Patricia Fernandes"
+    };
+
     f = fopen(arquivo, "w");
 
-    for (int i = 1; i <= 20; i++) {
+    for (int i = 0; i < 20; i++) {
+
+        Registro r;
+
+        r.id = i + 1;
+
+        strcpy(r.nome, nomes[i]);
+
+        sprintf(r.cpf, "000.111.22%02d", i + 1);
+
+        strcpy(r.matricula, "-");
+        strcpy(r.turma, "-");
+
+        strcpy(r.convenio, "-");
+        strcpy(r.tipoSanguineo, "-");
+
+        strcpy(r.cargo, "-");
+        strcpy(r.setor, "-");
+
+        strcpy(r.consulta, "-");
+        strcpy(r.medico, "-");
+
+        // ESCOLA
+        if (tipo == 1) {
+
+            sprintf(r.matricula, "MAT%d", i + 1);
+            sprintf(r.turma, "%dA", i + 1);
+        }
+
+        // HOSPITAL
+        else if (tipo == 2) {
+
+            strcpy(r.convenio, "Unimed");
+            strcpy(r.tipoSanguineo, "O+");
+        }
+
+        // EMPRESA
+        else if (tipo == 3) {
+
+            strcpy(r.cargo, "Funcionario");
+            strcpy(r.setor, "TI");
+        }
+
+        // CLINICA
+        else if (tipo == 4) {
+
+            strcpy(r.consulta, "Checkup");
+            strcpy(r.medico, "Dr. Carlos");
+        }
 
         fprintf(f,
-                "%d|Pessoa %02d|000.111.22%02d|Turma %dA\n",
-                i,
-                i,
-                i,
-                i);
+        "%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
+
+        r.id,
+        r.nome,
+        r.cpf,
+
+        r.matricula,
+        r.turma,
+
+        r.convenio,
+        r.tipoSanguineo,
+
+        r.cargo,
+        r.setor,
+
+        r.consulta,
+        r.medico
+        );
     }
 
     fclose(f);
 }
 
-// ---------------- ADICIONAR ----------------
-void adicionar(char arquivo[]) {
+// ================= ADICIONAR =================
+
+void adicionar(char arquivo[], int tipo) {
 
     Registro r;
 
-    // ID AUTOMÁTICO
-    if (total == 0) {
+    if (total == 0)
         r.id = 1;
-    } else {
+    else
         r.id = registros[total - 1].id + 1;
-    }
 
     getchar();
 
@@ -106,11 +242,68 @@ void adicionar(char arquivo[]) {
     fgets(r.cpf, 20, stdin);
     r.cpf[strcspn(r.cpf, "\n")] = 0;
 
-    printf("Matricula/Turma/Cargo: ");
-    fgets(r.info, 50, stdin);
-    r.info[strcspn(r.info, "\n")] = 0;
+    strcpy(r.matricula, "-");
+    strcpy(r.turma, "-");
+
+    strcpy(r.convenio, "-");
+    strcpy(r.tipoSanguineo, "-");
+
+    strcpy(r.cargo, "-");
+    strcpy(r.setor, "-");
+
+    strcpy(r.consulta, "-");
+    strcpy(r.medico, "-");
+
+    // ESCOLA
+    if (tipo == 1) {
+
+        printf("Matricula: ");
+        fgets(r.matricula, 20, stdin);
+        r.matricula[strcspn(r.matricula, "\n")] = 0;
+
+        printf("Turma: ");
+        fgets(r.turma, 20, stdin);
+        r.turma[strcspn(r.turma, "\n")] = 0;
+    }
+
+    // HOSPITAL
+    else if (tipo == 2) {
+
+        printf("Convenio: ");
+        fgets(r.convenio, 30, stdin);
+        r.convenio[strcspn(r.convenio, "\n")] = 0;
+
+        printf("Tipo sanguineo: ");
+        fgets(r.tipoSanguineo, 10, stdin);
+        r.tipoSanguineo[strcspn(r.tipoSanguineo, "\n")] = 0;
+    }
+
+    // EMPRESA
+    else if (tipo == 3) {
+
+        printf("Cargo: ");
+        fgets(r.cargo, 30, stdin);
+        r.cargo[strcspn(r.cargo, "\n")] = 0;
+
+        printf("Setor: ");
+        fgets(r.setor, 30, stdin);
+        r.setor[strcspn(r.setor, "\n")] = 0;
+    }
+
+    // CLINICA
+    else if (tipo == 4) {
+
+        printf("Consulta: ");
+        fgets(r.consulta, 30, stdin);
+        r.consulta[strcspn(r.consulta, "\n")] = 0;
+
+        printf("Medico: ");
+        fgets(r.medico, 30, stdin);
+        r.medico[strcspn(r.medico, "\n")] = 0;
+    }
 
     registros[total] = r;
+
     total++;
 
     salvar(arquivo);
@@ -118,8 +311,9 @@ void adicionar(char arquivo[]) {
     printf("\nRegistro salvo com ID %d!\n", r.id);
 }
 
-// ---------------- LISTAR ----------------
-void listar() {
+// ================= LISTAR =================
+
+void listar(int tipo) {
 
     printf("\n===== REGISTROS =====\n");
 
@@ -128,11 +322,35 @@ void listar() {
         printf("\nID: %d\n", registros[i].id);
         printf("Nome: %s\n", registros[i].nome);
         printf("CPF: %s\n", registros[i].cpf);
-        printf("Info: %s\n", registros[i].info);
+
+        if (tipo == 1) {
+
+            printf("Matricula: %s\n", registros[i].matricula);
+            printf("Turma: %s\n", registros[i].turma);
+        }
+
+        else if (tipo == 2) {
+
+            printf("Convenio: %s\n", registros[i].convenio);
+            printf("Tipo sanguineo: %s\n", registros[i].tipoSanguineo);
+        }
+
+        else if (tipo == 3) {
+
+            printf("Cargo: %s\n", registros[i].cargo);
+            printf("Setor: %s\n", registros[i].setor);
+        }
+
+        else if (tipo == 4) {
+
+            printf("Consulta: %s\n", registros[i].consulta);
+            printf("Medico: %s\n", registros[i].medico);
+        }
     }
 }
 
-// ---------------- APAGAR ----------------
+// ================= APAGAR =================
+
 void apagar(char arquivo[]) {
 
     int id;
@@ -148,6 +366,7 @@ void apagar(char arquivo[]) {
             achou = 1;
 
             for (int j = i; j < total - 1; j++) {
+
                 registros[j] = registros[j + 1];
             }
 
@@ -161,64 +380,27 @@ void apagar(char arquivo[]) {
         }
     }
 
-    if (!achou) {
+    if (!achou)
         printf("\nID nao encontrado!\n");
-    }
 }
 
-// ---------------- EDITAR ----------------
-void editar(char arquivo[]) {
+// ================= MENU =================
 
-    int id;
-
-    printf("\nDigite o ID: ");
-    scanf("%d", &id);
-
-    getchar();
-
-    for (int i = 0; i < total; i++) {
-
-        if (registros[i].id == id) {
-
-            printf("Novo nome: ");
-            fgets(registros[i].nome, 50, stdin);
-            registros[i].nome[strcspn(registros[i].nome, "\n")] = 0;
-
-            printf("Novo CPF: ");
-            fgets(registros[i].cpf, 20, stdin);
-            registros[i].cpf[strcspn(registros[i].cpf, "\n")] = 0;
-
-            printf("Nova info: ");
-            fgets(registros[i].info, 50, stdin);
-            registros[i].info[strcspn(registros[i].info, "\n")] = 0;
-
-            salvar(arquivo);
-
-            printf("\nRegistro atualizado!\n");
-
-            return;
-        }
-    }
-
-    printf("\nID nao encontrado!\n");
-}
-
-// ---------------- MENU ----------------
-void menuBanco(char arquivo[]) {
+void menuBanco(char arquivo[], int tipo) {
 
     int op;
 
-    criarDadosIniciais(arquivo);
+    criarDadosIniciais(arquivo, tipo);
+
     carregar(arquivo);
 
     do {
 
         printf("\n===== MENU =====\n");
-        printf("1 - Adicionar registro\n");
-        printf("2 - Listar registros\n");
-        printf("3 - Editar registro\n");
-        printf("4 - Apagar registro\n");
-        printf("5 - Voltar\n");
+        printf("1 - Adicionar\n");
+        printf("2 - Listar\n");
+        printf("3 - Apagar\n");
+        printf("4 - Voltar\n");
         printf("Escolha: ");
 
         scanf("%d", &op);
@@ -226,38 +408,37 @@ void menuBanco(char arquivo[]) {
         switch(op) {
 
             case 1:
-                adicionar(arquivo);
+                adicionar(arquivo, tipo);
                 break;
 
             case 2:
-                listar();
+                listar(tipo);
                 break;
 
             case 3:
-                editar(arquivo);
-                break;
-
-            case 4:
                 apagar(arquivo);
                 break;
         }
 
-    } while(op != 5);
+    } while(op != 4);
 }
 
-// ---------------- MAIN ----------------
+// ================= MAIN =================
+
 int main() {
 
     int op;
 
     do {
 
-        printf("\n===== BANCO DE DADOS =====\n");
+        printf("\n===== SISTEMA =====\n");
+
         printf("1 - Escola\n");
         printf("2 - Hospital\n");
         printf("3 - Empresa\n");
         printf("4 - Clinica\n");
         printf("5 - Sair\n");
+
         printf("Escolha: ");
 
         scanf("%d", &op);
@@ -265,19 +446,19 @@ int main() {
         switch(op) {
 
             case 1:
-                menuBanco("escola.txt");
+                menuBanco("escola.txt", 1);
                 break;
 
             case 2:
-                menuBanco("hospital.txt");
+                menuBanco("hospital.txt", 2);
                 break;
 
             case 3:
-                menuBanco("empresa.txt");
+                menuBanco("empresa.txt", 3);
                 break;
 
             case 4:
-                menuBanco("clinica.txt");
+                menuBanco("clinica.txt", 4);
                 break;
         }
 
