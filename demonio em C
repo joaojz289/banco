@@ -1,93 +1,434 @@
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <time.h>
- 
-#define MAX_REGISTROS 1000
-#define TAM_NOME      100
-#define TAM_CPF       15
-#define TAM_TEL       20
-#define TAM_EMAIL     100
-#define TAM_CAMPO     80
-#define TAM_OBS       200
-#define TAM_DATA      20
-#define TAM_LINHA     800
-#define NUM_BANCOS    4
-#define PASTA_DADOS   "dados"
-#define LOGIN_USUARIO "admin"
-#define LOGIN_SENHA   "1234"
-#define LIMPAR_TELA
+
+/* ======================== STRUCTS ======================== */
+
+typedef struct {
+    char nome[80];
+    char cpf[15];
+    char telefone[16];
+    char matricula[20];
+    char curso[50];
+} Aluno;
+
+typedef struct {
+    char nome[80];
+    char cpf[15];
+    char telefone[16];
+    char cartao_sus[20];
+    char convenio[50];
+} Paciente;
+
+typedef struct {
+    char nome[80];
+    char cpf[15];
+    char telefone[16];
+    char num_conta[20];
+    char tipo_conta[30]; /* Corrente, Poupanca, Salario */
+} Cliente;
+
+typedef struct {
+    char nome[80];
+    char cpf[15];
+    char telefone[16];
+    char num_reserva[20];
+    char tipo_quarto[30]; /* Single, Double, Suite */
+} Hospede;
+
+/* ======================== UTILITARIOS ======================== */
+
+void limpar_tela() {
 #ifdef _WIN32
-    #define LIMPAR_TELA "cls"
+    system("cls");
 #else
-    #define LIMPAR_TELA "clear"
+    system("clear");
 #endif
-
-#define COR_RESET   "\033[0m"
-#define COR_NEGRITO "\033[1m"
-#define COR_VERDE   "\033[32m"
-#define COR_AZUL    "\033[34m"
-#define COR_CIANO   "\033[36m"
-#define COR_AMAR    "\033[33m"
-#define COR_VERM    "\033[31m"
-
-typedef struct {
-    int  id;
-    char nome[TAM_NOME];
-    char cpf[TAM_CPF];
-    char telefone[TAM_TEL];
-    char email[TAM_EMAIL];
-    char campo1[TAM_CAMPO];
-    char campo2[TAM_CAMPO];
-    char campo3[TAM_CAMPO];
-    char campo4[TAM_CAMPO];
-    char data_cadastro[TAM_DATA];
-    char observacoes[TAM_OBS];
-} Registro;
-
-typedef struct {
-    Registro registros[MAX_REGISTROS];
-    int      total;
-    int      proximo_id;
-    char     nome[30];
-    char     arquivo[150];
-    char     label1[30];
-    char     label2[30];
-    char     label3[30];
-    char     label4[30];
-} Banco;
-
-Banco bancos[NUM_BANCOS];
-
-void limpar_tela(void) {
-    system(LIMPAR_TELA);
 }
 
-void pausar(void) {
-    printf(COR_AMAR "\n  Pressione ENTER para continuar..." COR_RESET);
-    int c;
-    while ((c = getchar()) != '\n' && c != EOF);
+void pausar() {
+    printf("\n  Pressione ENTER para continuar...");
+    getchar();
+    getchar();
 }
 
-void linha(char c, int tam) {
-    printf("  ");
-    for (int i = 0; i < tam; i++) putchar(c);
-    putchar('\n');
-}
-
-void cabecalho(const char *titulo) {
-    limpar_tela();
+void linha(int n) {
+    for (int i = 0; i < n; i++) printf("=");
     printf("\n");
-    linha('=', 50);
-    printf("  " COR_NEGRITO COR_CIANO "MeuBanco — %s" COR_RESET "\n", titulo);
-    linha('=', 50);
-    printf("\n");
-} 
+}
+
+/* ======================== ESCOLA ======================== */
+
+#define ARQ_ESCOLA "escola.dat"
+
+void escola_cadastrar() {
+    Aluno a;
+    printf("\n  [ESCOLA] Novo Aluno\n");
+    linha(40);
+    printf("  Nome      : "); scanf(" %79[^\n]", a.nome);
+    printf("  CPF       : "); scanf(" %14[^\n]", a.cpf);
+    printf("  Telefone  : "); scanf(" %15[^\n]", a.telefone);
+    printf("  Matricula : "); scanf(" %19[^\n]", a.matricula);
+    printf("  Curso     : "); scanf(" %49[^\n]", a.curso);
+
+    FILE *f = fopen(ARQ_ESCOLA, "ab");
+    if (!f) { printf("  ERRO ao abrir arquivo!\n"); return; }
+    fwrite(&a, sizeof(Aluno), 1, f);
+    fclose(f);
+    printf("\n  Aluno cadastrado com sucesso!\n");
+}
+
+void escola_listar() {
+    Aluno a;
+    FILE *f = fopen(ARQ_ESCOLA, "rb");
+    printf("\n  [ESCOLA] Lista de Alunos\n");
+    linha(60);
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int count = 0;
+    while (fread(&a, sizeof(Aluno), 1, f)) {
+        count++;
+        printf("  #%d\n", count);
+        printf("  Nome      : %s\n", a.nome);
+        printf("  CPF       : %s\n", a.cpf);
+        printf("  Telefone  : %s\n", a.telefone);
+        printf("  Matricula : %s\n", a.matricula);
+        printf("  Curso     : %s\n", a.curso);
+        linha(60);
+    }
+    fclose(f);
+    if (count == 0) printf("  Nenhum registro encontrado.\n");
+    else printf("  Total: %d aluno(s)\n", count);
+}
+
+void escola_buscar() {
+    Aluno a;
+    char cpf[15];
+    printf("\n  Buscar por CPF: "); scanf(" %14[^\n]", cpf);
+    FILE *f = fopen(ARQ_ESCOLA, "rb");
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int achou = 0;
+    while (fread(&a, sizeof(Aluno), 1, f)) {
+        if (strcmp(a.cpf, cpf) == 0) {
+            printf("\n  Encontrado:\n");
+            printf("  Nome      : %s\n", a.nome);
+            printf("  CPF       : %s\n", a.cpf);
+            printf("  Telefone  : %s\n", a.telefone);
+            printf("  Matricula : %s\n", a.matricula);
+            printf("  Curso     : %s\n", a.curso);
+            achou = 1;
+        }
+    }
+    fclose(f);
+    if (!achou) printf("  CPF nao encontrado.\n");
+}
+
+void menu_escola() {
+    int op;
+    do {
+        limpar_tela();
+        linha(40);
+        printf("    ESCOLA\n");
+        linha(40);
+        printf("  1. Cadastrar Aluno\n");
+        printf("  2. Listar Alunos\n");
+        printf("  3. Buscar por CPF\n");
+        printf("  0. Voltar\n");
+        linha(40);
+        printf("  Opcao: "); scanf("%d", &op);
+        switch (op) {
+            case 1: escola_cadastrar(); pausar(); break;
+            case 2: escola_listar();    pausar(); break;
+            case 3: escola_buscar();    pausar(); break;
+        }
+    } while (op != 0);
+}
+
+/* ======================== HOSPITAL ======================== */
+
+#define ARQ_HOSPITAL "hospital.dat"
+
+void hospital_cadastrar() {
+    Paciente p;
+    printf("\n  [HOSPITAL] Novo Paciente\n");
+    linha(40);
+    printf("  Nome        : "); scanf(" %79[^\n]", p.nome);
+    printf("  CPF         : "); scanf(" %14[^\n]", p.cpf);
+    printf("  Telefone    : "); scanf(" %15[^\n]", p.telefone);
+    printf("  Cartao SUS  : "); scanf(" %19[^\n]", p.cartao_sus);
+    printf("  Convenio    : "); scanf(" %49[^\n]", p.convenio);
+
+    FILE *f = fopen(ARQ_HOSPITAL, "ab");
+    if (!f) { printf("  ERRO ao abrir arquivo!\n"); return; }
+    fwrite(&p, sizeof(Paciente), 1, f);
+    fclose(f);
+    printf("\n  Paciente cadastrado com sucesso!\n");
+}
+
+void hospital_listar() {
+    Paciente p;
+    FILE *f = fopen(ARQ_HOSPITAL, "rb");
+    printf("\n  [HOSPITAL] Lista de Pacientes\n");
+    linha(60);
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int count = 0;
+    while (fread(&p, sizeof(Paciente), 1, f)) {
+        count++;
+        printf("  #%d\n", count);
+        printf("  Nome       : %s\n", p.nome);
+        printf("  CPF        : %s\n", p.cpf);
+        printf("  Telefone   : %s\n", p.telefone);
+        printf("  Cartao SUS : %s\n", p.cartao_sus);
+        printf("  Convenio   : %s\n", p.convenio);
+        linha(60);
+    }
+    fclose(f);
+    if (count == 0) printf("  Nenhum registro encontrado.\n");
+    else printf("  Total: %d paciente(s)\n", count);
+}
+
+void hospital_buscar() {
+    Paciente p;
+    char cpf[15];
+    printf("\n  Buscar por CPF: "); scanf(" %14[^\n]", cpf);
+    FILE *f = fopen(ARQ_HOSPITAL, "rb");
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int achou = 0;
+    while (fread(&p, sizeof(Paciente), 1, f)) {
+        if (strcmp(p.cpf, cpf) == 0) {
+            printf("\n  Encontrado:\n");
+            printf("  Nome       : %s\n", p.nome);
+            printf("  CPF        : %s\n", p.cpf);
+            printf("  Telefone   : %s\n", p.telefone);
+            printf("  Cartao SUS : %s\n", p.cartao_sus);
+            printf("  Convenio   : %s\n", p.convenio);
+            achou = 1;
+        }
+    }
+    fclose(f);
+    if (!achou) printf("  CPF nao encontrado.\n");
+}
+
+void menu_hospital() {
+    int op;
+    do {
+        limpar_tela();
+        linha(40);
+        printf("    HOSPITAL\n");
+        linha(40);
+        printf("  1. Cadastrar Paciente\n");
+        printf("  2. Listar Pacientes\n");
+        printf("  3. Buscar por CPF\n");
+        printf("  0. Voltar\n");
+        linha(40);
+        printf("  Opcao: "); scanf("%d", &op);
+        switch (op) {
+            case 1: hospital_cadastrar(); pausar(); break;
+            case 2: hospital_listar();    pausar(); break;
+            case 3: hospital_buscar();    pausar(); break;
+        }
+    } while (op != 0);
+}
+
+/* ======================== BANCO ======================== */
+
+#define ARQ_BANCO "banco.dat"
+
+void banco_cadastrar() {
+    Cliente c;
+    printf("\n  [BANCO] Novo Cliente\n");
+    linha(40);
+    printf("  Nome        : "); scanf(" %79[^\n]", c.nome);
+    printf("  CPF         : "); scanf(" %14[^\n]", c.cpf);
+    printf("  Telefone    : "); scanf(" %15[^\n]", c.telefone);
+    printf("  Num. Conta  : "); scanf(" %19[^\n]", c.num_conta);
+    printf("  Tipo (Corrente/Poupanca/Salario): "); scanf(" %29[^\n]", c.tipo_conta);
+
+    FILE *f = fopen(ARQ_BANCO, "ab");
+    if (!f) { printf("  ERRO ao abrir arquivo!\n"); return; }
+    fwrite(&c, sizeof(Cliente), 1, f);
+    fclose(f);
+    printf("\n  Cliente cadastrado com sucesso!\n");
+}
+
+void banco_listar() {
+    Cliente c;
+    FILE *f = fopen(ARQ_BANCO, "rb");
+    printf("\n  [BANCO] Lista de Clientes\n");
+    linha(60);
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int count = 0;
+    while (fread(&c, sizeof(Cliente), 1, f)) {
+        count++;
+        printf("  #%d\n", count);
+        printf("  Nome       : %s\n", c.nome);
+        printf("  CPF        : %s\n", c.cpf);
+        printf("  Telefone   : %s\n", c.telefone);
+        printf("  Num. Conta : %s\n", c.num_conta);
+        printf("  Tipo       : %s\n", c.tipo_conta);
+        linha(60);
+    }
+    fclose(f);
+    if (count == 0) printf("  Nenhum registro encontrado.\n");
+    else printf("  Total: %d cliente(s)\n", count);
+}
+
+void banco_buscar() {
+    Cliente c;
+    char cpf[15];
+    printf("\n  Buscar por CPF: "); scanf(" %14[^\n]", cpf);
+    FILE *f = fopen(ARQ_BANCO, "rb");
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int achou = 0;
+    while (fread(&c, sizeof(Cliente), 1, f)) {
+        if (strcmp(c.cpf, cpf) == 0) {
+            printf("\n  Encontrado:\n");
+            printf("  Nome       : %s\n", c.nome);
+            printf("  CPF        : %s\n", c.cpf);
+            printf("  Telefone   : %s\n", c.telefone);
+            printf("  Num. Conta : %s\n", c.num_conta);
+            printf("  Tipo       : %s\n", c.tipo_conta);
+            achou = 1;
+        }
+    }
+    fclose(f);
+    if (!achou) printf("  CPF nao encontrado.\n");
+}
+
+void menu_banco() {
+    int op;
+    do {
+        limpar_tela();
+        linha(40);
+        printf("    BANCO\n");
+        linha(40);
+        printf("  1. Cadastrar Cliente\n");
+        printf("  2. Listar Clientes\n");
+        printf("  3. Buscar por CPF\n");
+        printf("  0. Voltar\n");
+        linha(40);
+        printf("  Opcao: "); scanf("%d", &op);
+        switch (op) {
+            case 1: banco_cadastrar(); pausar(); break;
+            case 2: banco_listar();    pausar(); break;
+            case 3: banco_buscar();    pausar(); break;
+        }
+    } while (op != 0);
+}
+
+/* ======================== HOTEL ======================== */
+
+#define ARQ_HOTEL "hotel.dat"
+
+void hotel_cadastrar() {
+    Hospede h;
+    printf("\n  [HOTEL] Novo Hospede\n");
+    linha(40);
+    printf("  Nome         : "); scanf(" %79[^\n]", h.nome);
+    printf("  CPF          : "); scanf(" %14[^\n]", h.cpf);
+    printf("  Telefone     : "); scanf(" %15[^\n]", h.telefone);
+    printf("  Num. Reserva : "); scanf(" %19[^\n]", h.num_reserva);
+    printf("  Tipo Quarto (Single/Double/Suite): "); scanf(" %29[^\n]", h.tipo_quarto);
+
+    FILE *f = fopen(ARQ_HOTEL, "ab");
+    if (!f) { printf("  ERRO ao abrir arquivo!\n"); return; }
+    fwrite(&h, sizeof(Hospede), 1, f);
+    fclose(f);
+    printf("\n  Hospede cadastrado com sucesso!\n");
+}
+
+void hotel_listar() {
+    Hospede h;
+    FILE *f = fopen(ARQ_HOTEL, "rb");
+    printf("\n  [HOTEL] Lista de Hospedes\n");
+    linha(60);
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int count = 0;
+    while (fread(&h, sizeof(Hospede), 1, f)) {
+        count++;
+        printf("  #%d\n", count);
+        printf("  Nome         : %s\n", h.nome);
+        printf("  CPF          : %s\n", h.cpf);
+        printf("  Telefone     : %s\n", h.telefone);
+        printf("  Num. Reserva : %s\n", h.num_reserva);
+        printf("  Tipo Quarto  : %s\n", h.tipo_quarto);
+        linha(60);
+    }
+    fclose(f);
+    if (count == 0) printf("  Nenhum registro encontrado.\n");
+    else printf("  Total: %d hospede(s)\n", count);
+}
+
+void hotel_buscar() {
+    Hospede h;
+    char cpf[15];
+    printf("\n  Buscar por CPF: "); scanf(" %14[^\n]", cpf);
+    FILE *f = fopen(ARQ_HOTEL, "rb");
+    if (!f) { printf("  Nenhum registro encontrado.\n"); return; }
+    int achou = 0;
+    while (fread(&h, sizeof(Hospede), 1, f)) {
+        if (strcmp(h.cpf, cpf) == 0) {
+            printf("\n  Encontrado:\n");
+            printf("  Nome         : %s\n", h.nome);
+            printf("  CPF          : %s\n", h.cpf);
+            printf("  Telefone     : %s\n", h.telefone);
+            printf("  Num. Reserva : %s\n", h.num_reserva);
+            printf("  Tipo Quarto  : %s\n", h.tipo_quarto);
+            achou = 1;
+        }
+    }
+    fclose(f);
+    if (!achou) printf("  CPF nao encontrado.\n");
+}
+
+void menu_hotel() {
+    int op;
+    do {
+        limpar_tela();
+        linha(40);
+        printf("    HOTEL\n");
+        linha(40);
+        printf("  1. Cadastrar Hospede\n");
+        printf("  2. Listar Hospedes\n");
+        printf("  3. Buscar por CPF\n");
+        printf("  0. Voltar\n");
+        linha(40);
+        printf("  Opcao: "); scanf("%d", &op);
+        switch (op) {
+            case 1: hotel_cadastrar(); pausar(); break;
+            case 2: hotel_listar();    pausar(); break;
+            case 3: hotel_buscar();    pausar(); break;
+        }
+    } while (op != 0);
+}
+
+/* ======================== MENU PRINCIPAL ======================== */
 
 int main() {
-    cabecalho("Teste do Sistema");
-    printf("  " COR_VERDE "Funcoes utilitarias OK!\n" COR_RESET);
-    pausar();
+    int op;
+    do {
+        limpar_tela();
+        linha(44);
+        printf("   SISTEMA DE GERENCIAMENTO DE REGISTROS\n");
+        linha(44);
+        printf("  Escolha o banco de dados:\n\n");
+        printf("  1.  Escola\n");
+        printf("  2.  Hospital\n");
+        printf("  3.  Banco\n");
+        printf("  4.  Hotel\n");
+        printf("  0.  Sair\n");
+        linha(44);
+        printf("  Opcao: "); scanf("%d", &op);
+        switch (op) {
+            case 1: menu_escola();   break;
+            case 2: menu_hospital(); break;
+            case 3: menu_banco();    break;
+            case 4: menu_hotel();    break;
+            case 0: printf("\n  Ate logo!\n\n"); break;
+            default: printf("  Opcao invalida!\n"); pausar(); break;
+        }
+    } while (op != 0);
+
     return 0;
 }
